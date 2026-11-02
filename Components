@@ -1,1 +1,14 @@
+Hardware Components
 
+| Component | Purpose |
+|---|---|
+| Arduino Uno | Main controller |
+| HC-SR04 Ultrasonic Sensor | Detects manhole cover position |
+| IR Sensor | Helps identify potential human falls |
+| PIR Sensor | Detects nearby human movement |
+| DHT11 Sensor | Measures temperature and humidity |
+| Yellow LED | Indicates open manhole condition |
+| Red LED | Indicates emergency condition |
+| Buzzer | Provides audio alerts |
+| Breadboard | Circuit connections |
+| Jumper Wires | Electrical connections |
