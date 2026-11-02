@@ -1,1 +1,187 @@
 
+/*
+  Smart Manhole Safety System
+
+  HC-SR04  = Lid detector
+  IR sensor = Obstacle detector (possible fall indication)
+  DHT11     = Temperature and humidity monitoring
+
+  Yellow LED = Lid open
+  Red LED + Buzzer = Emergency indication
+*/
+
+#include <DHT.h>
+
+// Pin definitions
+const int TRIG_PIN   = 9;
+const int ECHO_PIN   = 10;
+const int IR_PIN     = 7;
+
+const int YELLOW_LED = 4;
+const int RED_LED    = 5;
+const int BUZZER     = 6;
+
+#define DHT_PIN  2
+#define DHT_TYPE DHT11
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+// Thresholds for your small prototype
+const float LID_CLOSED_CM = 15.0;
+const float LID_OPEN_CM   = 18.0;
+
+// Timing
+unsigned long prevMillis = 0;
+unsigned long lastDHTRead = 0;
+
+bool yellowState = LOW;
+bool redState = LOW;
+bool lidOpen = false;
+
+float temperature = NAN;
+float humidity = NAN;
+
+void setup() {
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(IR_PIN, INPUT);
+
+  pinMode(YELLOW_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  digitalWrite(YELLOW_LED, LOW);
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(BUZZER, LOW);
+
+  Serial.begin(9600);
+  dht.begin();
+
+  Serial.println("Smart Manhole Safety System");
+  Serial.println("Allow PIR/other sensors to stabilize if used.");
+}
+
+// Read distance from HC-SR04
+float readDistanceCM() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  unsigned long duration =
+      pulseIn(ECHO_PIN, HIGH, 30000UL);
+
+  if (duration == 0) {
+    return -1.0;  // Invalid reading / no echo
+  }
+
+  return duration * 0.0343 / 2.0;
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  float dist = readDistanceCM();
+
+  // Many IR modules output LOW when an obstacle is detected.
+  // Change LOW to HIGH if your module works oppositely.
+  int irValue = digitalRead(IR_PIN);
+  bool fallDetected = (irValue == LOW);
+
+  // Update lid state only for valid distance readings.
+  if (dist >= 0) {
+    if (dist > LID_OPEN_CM) {
+      lidOpen = true;
+    }
+    else if (dist < LID_CLOSED_CM) {
+      lidOpen = false;
+    }
+    // Between 15 and 18 cm, retain the previous state.
+  }
+
+  // Read DHT11 every 2 seconds
+  if (now - lastDHTRead >= 2000UL) {
+    lastDHTRead = now;
+
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+
+    if (!isnan(t) && !isnan(h)) {
+      temperature = t;
+      humidity = h;
+    }
+  }
+
+  // Display sensor readings
+  Serial.print("Distance: ");
+  if (dist < 0) {
+    Serial.print("No echo");
+  } else {
+    Serial.print(dist);
+    Serial.print(" cm");
+  }
+
+  Serial.print(" | IR: ");
+  Serial.print(irValue);
+
+  Serial.print(" | Temperature: ");
+  if (isnan(temperature)) {
+    Serial.print("N/A");
+  } else {
+    Serial.print(temperature);
+    Serial.print(" C");
+  }
+
+  Serial.print(" | Humidity: ");
+  if (isnan(humidity)) {
+    Serial.print("N/A");
+  } else {
+    Serial.print(humidity);
+    Serial.print(" %");
+  }
+
+  Serial.print(" | Lid: ");
+  Serial.println(lidOpen ? "OPEN" : "CLOSED");
+
+  // Emergency: lid open + IR obstacle
+  if (lidOpen && fallDetected) {
+    if (now - prevMillis >= 100UL) {
+      prevMillis = now;
+      redState = !redState;
+
+      digitalWrite(RED_LED, redState);
+      digitalWrite(BUZZER, redState);
+    }
+
+    digitalWrite(YELLOW_LED, LOW);
+    yellowState = LOW;
+  }
+
+  // Lid open, but no IR obstacle
+  else if (lidOpen) {
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(BUZZER, LOW);
+    redState = LOW;
+
+    if (now - prevMillis >= 1000UL) {
+      prevMillis = now;
+      yellowState = !yellowState;
+      digitalWrite(YELLOW_LED, yellowState);
+    }
+  }
+
+  // Normal: lid closed
+  else {
+    yellowState = LOW;
+    redState = LOW;
+
+    digitalWrite(YELLOW_LED, LOW);
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(BUZZER, LOW);
+  }
+
+  delay(50);
+}
+
